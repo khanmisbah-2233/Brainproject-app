@@ -1,0 +1,7 @@
+tensorflow
+numpy
+opencv-python
+matplotlib
+nibabel
+scikit-learn
+streamlit
