@@ -1,91 +1,76 @@
 import os
+import tempfile
 import nibabel as nib
-
-VALID_EXTENSIONS = (".nii", ".nii.gz")
-
-
-def _find_modality_file(files, keywords):
-    """
-    Return the first file that matches all keywords.
-    """
-    for file_name in files:
-        lower_name = file_name.lower()
-        if lower_name.endswith(VALID_EXTENSIONS) and all(k in lower_name for k in keywords):
-            return file_name
-    return None
+import numpy as np
 
 
 def get_patient_dirs(dataset_path):
-    """
-    Return all valid patient directories inside the dataset path.
-    """
     if not os.path.exists(dataset_path):
-        raise FileNotFoundError(f"Dataset path not found: {dataset_path}")
+        return []
 
     patient_dirs = []
-    for item in sorted(os.listdir(dataset_path)):
+    for item in os.listdir(dataset_path):
         full_path = os.path.join(dataset_path, item)
         if os.path.isdir(full_path):
             patient_dirs.append(full_path)
 
-    if not patient_dirs:
-        raise ValueError(f"No patient folders found in: {dataset_path}")
-
+    patient_dirs.sort()
     return patient_dirs
 
 
-def load_nifti(file_path):
-    """
-    Load a NIfTI file and return the image data as float32.
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"NIfTI file not found: {file_path}")
+def _find_modality_file(patient_dir, keyword):
+    files = os.listdir(patient_dir)
+    for f in files:
+        lower_f = f.lower()
+        if keyword in lower_f and (lower_f.endswith(".nii") or lower_f.endswith(".nii.gz")):
+            return os.path.join(patient_dir, f)
+    raise FileNotFoundError(f"Could not find file containing '{keyword}' in {patient_dir}")
 
-    return nib.load(file_path).get_fdata().astype("float32")
+
+def load_nifti_file(file_path):
+    nii = nib.load(file_path)
+    return nii.get_fdata().astype(np.float32)
 
 
-def load_patient(patient_path):
-    """
-    Load all required BraTS modalities for one patient:
-    FLAIR, T1, T1CE, T2, SEG
-    """
-    if not os.path.exists(patient_path):
-        raise FileNotFoundError(f"Patient path not found: {patient_path}")
+def load_patient(patient_dir):
+    flair_path = _find_modality_file(patient_dir, "flair")
+    t1_path = _find_modality_file(patient_dir, "_t1.")
+    t1ce_path = _find_modality_file(patient_dir, "t1ce")
+    t2_path = _find_modality_file(patient_dir, "_t2.")
+    seg_path = _find_modality_file(patient_dir, "seg")
 
-    files = os.listdir(patient_path)
+    flair = load_nifti_file(flair_path)
+    t1 = load_nifti_file(t1_path)
+    t1ce = load_nifti_file(t1ce_path)
+    t2 = load_nifti_file(t2_path)
+    seg = load_nifti_file(seg_path)
 
-    flair_file = _find_modality_file(files, ["flair"])
-    t1_file = _find_modality_file(files, ["t1"]) and not _find_modality_file(files, ["t1ce"])
-    t1ce_file = _find_modality_file(files, ["t1ce"])
-    t2_file = _find_modality_file(files, ["t2"])
-    seg_file = _find_modality_file(files, ["seg"])
+    return flair, t1, t1ce, t2, seg
 
-    # Fix T1 detection properly
-    t1_file = None
-    for file_name in files:
-        lower_name = file_name.lower()
-        if lower_name.endswith(VALID_EXTENSIONS) and "t1" in lower_name and "t1ce" not in lower_name:
-            t1_file = file_name
-            break
 
-    required = {
-        "FLAIR": flair_file,
-        "T1": t1_file,
-        "T1CE": t1ce_file,
-        "T2": t2_file,
-        "SEG": seg_file,
-    }
+def load_uploaded_nifti(uploaded_file):
+    suffix = ".nii.gz" if uploaded_file.name.endswith(".nii.gz") else ".nii"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(uploaded_file.read())
+        temp_path = tmp.name
 
-    missing = [name for name, file_name in required.items() if file_name is None]
-    if missing:
-        raise ValueError(
-            f"Missing required modality files in '{patient_path}'. Missing: {', '.join(missing)}"
-        )
+    try:
+        volume = nib.load(temp_path).get_fdata().astype(np.float32)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
-    flair = load_nifti(os.path.join(patient_path, flair_file))
-    t1 = load_nifti(os.path.join(patient_path, t1_file))
-    t1ce = load_nifti(os.path.join(patient_path, t1ce_file))
-    t2 = load_nifti(os.path.join(patient_path, t2_file))
-    seg = load_nifti(os.path.join(patient_path, seg_file))
+    return volume
+
+
+def load_uploaded_modalities(flair_file, t1_file, t1ce_file, t2_file, seg_file=None):
+    flair = load_uploaded_nifti(flair_file)
+    t1 = load_uploaded_nifti(t1_file)
+    t1ce = load_uploaded_nifti(t1ce_file)
+    t2 = load_uploaded_nifti(t2_file)
+
+    seg = None
+    if seg_file is not None:
+        seg = load_uploaded_nifti(seg_file)
 
     return flair, t1, t1ce, t2, seg

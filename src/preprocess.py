@@ -36,13 +36,6 @@ def create_input(flair_slice, t1_slice, t1ce_slice, t2_slice):
 
 
 def create_mask(seg_slice):
-    """
-    4-class one-hot mask:
-    channel 0 -> background
-    channel 1 -> necrotic core (label 1)
-    channel 2 -> edema (label 2)
-    channel 3 -> enhancing tumor (label 4)
-    """
     seg_slice = resize_slice(seg_slice, is_mask=True)
 
     mask = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 4), dtype=np.float32)
@@ -101,3 +94,38 @@ def extract_patient_slices(flair, t1, t1ce, t2, seg, tumor_only=True):
             Y_patient.append(mask)
 
     return X_patient, Y_patient
+
+
+def extract_uploaded_slices(flair, t1, t1ce, t2, seg=None):
+    if seg is not None:
+        if not (flair.shape == t1.shape == t1ce.shape == t2.shape == seg.shape):
+            raise ValueError("All uploaded modalities and segmentation must have the same shape.")
+    else:
+        if not (flair.shape == t1.shape == t1ce.shape == t2.shape):
+            raise ValueError("All uploaded modalities must have the same shape.")
+
+    num_slices = flair.shape[2]
+
+    X_slices = []
+    Y_slices = []
+
+    for i in range(num_slices):
+        image = create_input(
+            flair[:, :, i],
+            t1[:, :, i],
+            t1ce[:, :, i],
+            t2[:, :, i]
+        )
+        X_slices.append(image)
+
+        if seg is not None:
+            mask = create_mask(seg[:, :, i])
+            Y_slices.append(mask)
+
+    X_slices = np.array(X_slices, dtype=np.float32)
+
+    if seg is not None:
+        Y_slices = np.array(Y_slices, dtype=np.float32)
+        return X_slices, Y_slices
+
+    return X_slices, None

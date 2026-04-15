@@ -17,11 +17,6 @@ def load_trained_model(model_path):
 
 
 def predict_mask(model, image):
-    """
-    Predict segmentation mask for one image.
-    image shape: (H, W, 4) or (1, H, W, 4)
-    returns: prediction shape (H, W, 4) for 4-class segmentation
-    """
     image = np.array(image, dtype=np.float32)
 
     if image.ndim == 3:
@@ -34,10 +29,17 @@ def predict_mask(model, image):
     return pred[0]
 
 
+def predict_volume(model, X_volume):
+    preds = []
+    for i in range(len(X_volume)):
+        preds.append(predict_mask(model, X_volume[i]))
+    return np.array(preds, dtype=np.float32)
+
+
 def remove_small_regions(onehot_mask, min_area=30):
     cleaned = np.zeros_like(onehot_mask, dtype=np.float32)
 
-    for c in range(1, onehot_mask.shape[-1]):  # skip background
+    for c in range(1, onehot_mask.shape[-1]):
         channel = onehot_mask[:, :, c].astype(np.uint8)
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(channel, connectivity=8)
 
